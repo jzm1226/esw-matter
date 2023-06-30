@@ -1,0 +1,3 @@
+[submodule "matter/connectedhomeip"]
+	path = matter/connectedhomeip
+	url = https://github.com/espressif/connectedhomeip
