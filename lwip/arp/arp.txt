@@ -1,0 +1,67 @@
+ARP状态
+ETHARP_STATE_EMPTY                      空闲状态
+ETHARP_STATE_PENDING                    PENDING态，一般为新建发送
+ETHARP_STATE_STABLE                     收到ARP RESPONSE后，更新为STABLE态
+ETHARP_STATE_STABLE_REREQUESTING_1      STABLE老化时，每2个ARP_TMR_INTERVAL发送一次ARP REQUEST，第一个ARP_TMR_INTERVAL计数
+ETHARP_STATE_STABLE_REREQUESTING_2      STABLE老化时，每2个ARP_TMR_INTERVAL发送一次ARP REQUEST，第二个ARP_TMR_INTERVAL计数
+ETHARP_STATE_STATIC                     静态ARP表项
+如果是自己发送ARP REQUEST则先进入到PENDING态，收到ARP RESPONSE后，更新为STABLE态
+如果收到别人发送给自己的ARP REQUEST请求，则直接进入到STABLE态，注意ARP ACD Probe和etharp_gratuitous不加入列表
+
+#define ARP_TMR_INTERVAL 1000
+TCPIP软件定时器，ARP老化定时器，单位为MS
+
+#define ARP_MAXPENDING 5
+PENDING态持续时间，如果ARP REQUEST之后，连续ARP_MAXPENDING个TMR周期未收到ARP RESPONSE,则释放表项
+位于PENDING状态的表项会重发ARP REQUEST请求，网络良好的情况下，如果新建后定时器刚好到达，则会发送2个ARP REQUEST
+ARP_MAXPENDING的值至少为2， 如果为1，则新建后定时器刚好到达，ARP表项被删除
+
+#define ARP_MAXAGE 300
+ARP老化时间，即ARP_MAXAGE个TMR周期，无此ARP请求，则释放表项
+ARP表项使用ctime进行计数
+
+#define ARP_TABLE_SIZE 10
+ARP表项的数组最大值
+
+#define ARP_QUEUEING 1
+ARP的是否开启队列模式，开启队列模式时，数据量没有限制，只要可以发送进来
+当有数据需要发送时，可以直接查找到ARP表，则直接发送，无法查找到ARP表，则缓存再ARP中，等待ARP RESPONSE
+当有数据需要发送时，开启队列模式，需要ARP REQUEST时数据会挂载到ARP的QUEUE中，收到ARP RESPONSE时，循环发送队列中的数据并释放
+当有数据需要发送时，关闭队列模式，需要ARP REQUEST时，最新数据会替换老的数据与表项绑定，收到ARP RESPONSE时，发送表项绑定数据并释放
+
+#define ETHARP_SUPPORT_STATIC_ENTRIES 0
+是否支持静态表项的添加，静态表项没有老化
+
+ARP标记
+#define ETHARP_FLAG_TRY_HARD
+当ARP表项满时，则查找可覆盖表项
+如果表项已满，则统计stable态ctime最大的表项，优先覆盖
+如果表项已满，则统计pending态ctime最大的表项，表项未绑定数据？次优先覆盖
+如果表项已满，则统计Pending态ctime最大的表项，表项绑定数据，覆盖
+#define ETHARP_FLAG_FIND_ONLY
+查找ARP表中匹配项，查找不到返回错误
+#define ETHARP_FLAG_STATIC_ENTRY
+ARP表种静态表项
+
+#define ETHARP_TABLE_MATCH_NETIF !LWIP_SINGLE_NETIF
+ARP匹配时，是否匹配netif节点值，多个节点时有用？
+
+#define LWIP_NETIF_HWADDRHINT 0
+每条流的PCB会绑定一个hints_netif，hints_netif中保存一个ARP表项的index，则可以直接找到ARP表项
+如果没有定义，则缓存上一次的index到全局变量etharp_cached_entry中，首先进行cache匹配
+
+#define ARP_AGE_REREQUEST_USED_UNICAST   (ARP_MAXAGE - 30)
+#define ARP_AGE_REREQUEST_USED_BROADCAST (ARP_MAXAGE - 15)
+处于STABLE态的ARP表项可以直接使用，当老化时间到达ARP_AGE_REREQUEST_USED_UNICAST，发送ARP单播请求
+处于STABLE态的ARP表项可以直接使用，当老化时间到达ARP_AGE_REREQUEST_USED_BROADCAST，发送ARP广播请求
+无论上述那种老化时间到达，则状态置为ETHARP_STATE_STABLE_REREQUESTING_1
+如果收到ARP RESPONSE，重置为STABLE态，ctime为0
+如果未有ARP RESPONSE，ARP表项2秒内不重复发送ARP REQUEST.  TMR中ETHARP_STATE_STABLE_REREQUESTING_1先转为ETHARP_STATE_STABLE_REREQUESTING_2态，再次转换为STABLE态时才能重新发送ARP REQUEST
+
+#define LWIP_ACD 0
+ARP Probe
+发送者IP为0，目标的IP地址为自己，查看网络中是否有IP地址冲突，目标主机收到发送IP地址为0的ARP不会更新自己的表项
+ARP Announcement
+
+#define etharp_gratuitous(netif) etharp_request((netif), netif_ip4_addr(netif))
+发送者和目标的IP地址一致都是自己，查看网络中是否有IP地址冲突
